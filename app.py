@@ -10,11 +10,14 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 
 # ############################################################################
-# --- KONFIGURATION & KONSTANTEN ---
+# --- SICHERHEITS- & KONFIGURATIONS-KONSTANTEN ---
 # ############################################################################
 
+# HINWEIS: FÜR ECHTE APPS SOLLTEN SIE DIESE WERTE IN st.secrets SPEICHERN!
+HARDCODED_USERNAME = "admin"
+HARDCODED_PASSWORD = "secure-login" # ÄNDERN SIE DIESES PASSWORT SOFORT!
+
 FILE_INPUT_DEFAULT = 'input.csv'
-GSPREAD_CREDENTIALS_FILE = 'credentials.json'
 GSPREAD_SHEET_URL = 'https://docs.google.com/spreadsheets/d/14hxtRmWsTiO8t4G3EEXFNKK19xj5cUDu4nWBtTXPwvI/edit?gid=0#gid=0'
 GSPREAD_SHEET_NAME_MAIN = 'Akquise-Kunden' 
 GSPREAD_SHEET_NAME_REJECTED = 'Abgelehnt'
@@ -24,7 +27,8 @@ GSPREAD_SCOPE = [
     'https://www.googleapis.com/auth/drive.file'
 ]
 
-# Regex & Header Config
+# Regex & Header Config (Unverändert)
+# ... (Ihr ursprünglicher Code für TLD_LIST, EMAIL_REGEX, IMPRINT_REGEX, HEADERS folgt hier)
 TLD_LIST = r'\.(?:' + \
     r'com|org|net|edu|gov|mil|biz|info|name|mobi|jobs|travel|museum|aero|asia|cat|coop|int|pro|tel|xxx|' + \
     r'de|eu|at|ch|fr|uk|co\.uk|nl|es|it|pl|se|no|dk|fi|ru|ca|us|jp|cn|in|br|au|nz|' + \
@@ -83,7 +87,6 @@ IGNORE_EMAILS_REGEX = re.compile(r'(datenschutz|privacy|@example\.com|@wix\.com|
 IMPRINT_REGEX = re.compile(r'(impressum|imprint|legal-notice|legal|kontakt|contact)', re.IGNORECASE)
 
 HEADERS = {
-    # Benutze einen echten mobilen User-Agent
     'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
 }
 
@@ -91,6 +94,29 @@ HEADERS = {
 # --- HELPER FUNKTIONEN ---
 # ############################################################################
 
+# Funktion zum Laden der GSheet Credentials aus st.secrets
+def get_gspread_credentials():
+    """Lädt die GSpread Service Account Credentials aus st.secrets."""
+    if not st.secrets:
+        st.error("GSheet-Anmeldeinformationen (Secrets) nicht gefunden. Bitte `secrets.toml` einrichten.")
+        st.stop()
+    
+    # Aufbau des Credentials-Objekts aus den Secrets. Diese Struktur muss mit secrets.toml übereinstimmen.
+    try:
+        creds_info = {
+            "type": "service_account",
+            "project_id": st.secrets["gcp_service_account"]["project_id"],
+            # Der private Schlüssel muss \n anstelle von \\n verwenden
+            "private_key": st.secrets["gcp_service_account"]["private_key"].replace('\\n', '\n'),
+            "client_email": st.secrets["gcp_service_account"]["client_email"],
+            # ... weitere notwendige Felder ...
+        }
+        return Credentials.from_service_account_info(creds_info, scopes=GSPREAD_SCOPE)
+    except KeyError as e:
+        st.error(f"Fehler beim Laden der GSheet Secrets: '{e}' fehlt. Überprüfen Sie die Struktur in `secrets.toml`.")
+        st.stop()
+        
+# Ihre originalen Helper-Funktionen (Unverändert)
 def normalize_domain(url):
     if not isinstance(url, str): return ""
     url = url.strip().lower()
@@ -179,18 +205,14 @@ def execute_crawling(website_url):
         print(f"Crawl Error: {e}")
     return email_result
 
-# Funktion zum Speichern (ausgelagert, da sie nun aus Popups gerufen wird)
 def save_entry_and_advance(website_url, anrede, name, final_name_from_input=None):
     
-    # Überschreibe final_name_from_input nur, wenn es wirklich Herr/Frau ist
     if final_name_from_input:
         final_name = final_name_from_input
-    # Ansonsten nutze den Wert aus der Logic (wird bei Firma leer sein)
     elif anrede == "Herr" or anrede == "Frau":
-        # Dies sollte nicht passieren, wenn die Funktion aus dem Dialog kommt
         final_name = ""
     else:
-        final_name = name # Bleibt leer bei Firma
+        final_name = name 
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -243,25 +265,52 @@ def inject_custom_css():
         </style>
     """, unsafe_allow_html=True)
 
-def main():
-    st.set_page_config(page_title="Akquise Bot", layout="wide", initial_sidebar_state="collapsed")
-    inject_custom_css()
+def check_password():
+    """Zeigt die Passwort-UI an und setzt st.session_state.authenticated auf True bei Erfolg."""
+    if st.session_state.get("authenticated", False):
+        return True
+
+    st.title("🔐 Login erforderlich")
+    with st.form("login"):
+        username = st.text_input("Benutzername")
+        password = st.text_input("Passwort", type="password")
+        submitted = st.form_submit_button("Einloggen")
+
+        if submitted:
+            if username == HARDCODED_USERNAME and password == HARDCODED_PASSWORD:
+                st.session_state.authenticated = True
+                st.rerun() # Neu laden, um die Haupt-App zu starten
+            else:
+                st.error("Falscher Benutzername oder Passwort.")
+        
+        # Stoppt die Ausführung der Haupt-App, solange nicht authentifiziert
+        if not st.session_state.get("authenticated", False):
+            return False
+    
+    return st.session_state.authenticated
+
+
+def main_app_logic():
+    """Der Hauptteil der Anwendung, der nur nach erfolgreichem Login läuft."""
 
     if 'queue' not in st.session_state:
         st.session_state.bearbeiter = ""
         with st.form("login_form"):
             st.title("🚀 Akquise Bot Start")
+            st.warning("Hinweis: Es muss eine Datei `input.csv` im Verzeichnis sein.")
             name = st.text_input("Dein Name (Bearbeiter):")
             submitted = st.form_submit_button("Session starten")
+            
             if submitted and name:
                 st.session_state.bearbeiter = name
+                
                 if not os.path.exists(FILE_INPUT_DEFAULT):
-                    st.error(f"Datei '{FILE_INPUT_DEFAULT}' nicht gefunden!")
+                    st.error(f"Datei '{FILE_INPUT_DEFAULT}' nicht gefunden! Bitte fügen Sie eine hinzu.")
                     st.stop()
-                df_input = pd.read_csv(FILE_INPUT_DEFAULT)
-                df_input.columns = [c.strip().strip('"') for c in df_input.columns]
+                
+                # 1. Google Sheets Initialisierung (mit secrets)
                 try:
-                    creds = Credentials.from_service_account_file(GSPREAD_CREDENTIALS_FILE, scopes=GSPREAD_SCOPE)
+                    creds = get_gspread_credentials() # Läd Secrets
                     client = gspread.authorize(creds)
                     spreadsheet = client.open_by_url(GSPREAD_SHEET_URL)
                     ws_main = spreadsheet.worksheet(GSPREAD_SHEET_NAME_MAIN)
@@ -272,18 +321,24 @@ def main():
                 except Exception as e:
                     st.error(f"GSheet Fehler: {e}")
                     st.stop()
+
+                # 2. Input-CSV laden und Duplikate filtern
+                df_input = pd.read_csv(FILE_INPUT_DEFAULT)
+                df_input.columns = [c.strip().strip('"') for c in df_input.columns]
                 queue = []
                 for index, row in df_input.iterrows():
                     url = row.get('website', '')
                     if normalize_domain(url) not in all_existing and normalize_domain(url) != "":
                         queue.append(url)
+                
+                # 3. Session State setzen
                 st.session_state.queue = queue
                 st.session_state.current_idx = 0
                 st.session_state.ws_main = ws_main
                 st.session_state.ws_rejected = ws_rejected
                 st.rerun()
             else:
-                st.stop()
+                st.stop() # Stoppt hier, bis das Formular ausgefüllt ist
 
     if st.session_state.current_idx >= len(st.session_state.queue):
         st.success("🎉 Alle Websites aus input.csv sind bearbeitet!")
@@ -306,25 +361,18 @@ def main():
         st.markdown(f"**{website_url}**")
         
     try:
-        # Hier könnte man die Höhe auf 70vh erhöhen, wenn man mehr Platz will
         st.components.v1.iframe(website_url, height=600, scrolling=True)
     except:
         st.warning("Vorschau blockiert - bitte Link nutzen.")
 
-    # --- 3. STICKY FOOTER (Optimiertes Button-Layout) ---
+    # --- STICKY FOOTER (Optimiertes Button-Layout) ---
     st.markdown('<div class="sticky-footer">', unsafe_allow_html=True)
     
-    # 3 Spalten im Verhältnis 1:1:1
     c_herr_frau, c_firma, c_reject = st.columns([1, 1, 1])
     
-    # Button 1 & 2 (Herr/Frau) -> Führt zu Pop-up
     with c_herr_frau:
-        # Wir nutzen einen Container, der sich öffnet, um den Namen abzufragen
         with st.popover("🙋 Kontakt gefunden", use_container_width=True):
             st.markdown("##### Ansprechpartner eintragen:")
-            
-            # WICHTIG: Die Buttons im Popover müssen den Session State ändern, 
-            # um save_entry_and_advance direkt mit dem Namen zu rufen.
             
             input_name_dialog = st.text_input("Name der Person", key="pop_name")
 
@@ -340,26 +388,33 @@ def main():
                  else:
                      st.warning("Bitte Namen eingeben.")
                      
-    # Button 3 (Firma/Leer) -> Sofortiger Klick
     with c_firma:
         if st.button("✅ Aktzeptieren", type="primary", use_container_width=True):
-            # Speichert sofort: Anrede="", Name=""
             save_entry_and_advance(website_url, "", "", "")
 
-    # Button 4 (Ablehnen) -> Sofortiger Klick
     with c_reject:
         if st.button("❌ Ablehnen", type="secondary", use_container_width=True):
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             try:
                 st.session_state.ws_rejected.append_row([website_url, timestamp])
                 st.toast(f"❌ {website_url} abgelehnt")
             except Exception as e:
                 st.error(f"Fehler beim Speichern: {e}")
             
-            # Nächster Eintrag
             st.session_state.current_idx += 1
             st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)
+
+
+def main():
+    st.set_page_config(page_title="Akquise Bot", layout="wide", initial_sidebar_state="collapsed")
+    inject_custom_css()
+    
+    # 1. Passwortprüfung
+    if check_password():
+        # 2. Hauptlogik nur, wenn erfolgreich authentifiziert
+        main_app_logic()
 
 
 if __name__ == "__main__":
