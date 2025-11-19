@@ -14,8 +14,7 @@ from datetime import datetime
 # ############################################################################
 
 # HINWEIS: FÜR ECHTE APPS SOLLTEN SIE DIESE WERTE IN st.secrets SPEICHERN!
-HARDCODED_USERNAME = "admin"
-HARDCODED_PASSWORD = "secure-login" # ÄNDERN SIE DIESES PASSWORT SOFORT!
+HARDCODED_PASSWORD = st.secrets["app_config"]["password"] 
 
 FILE_INPUT_DEFAULT = 'input.csv'
 GSPREAD_SHEET_URL = 'https://docs.google.com/spreadsheets/d/14hxtRmWsTiO8t4G3EEXFNKK19xj5cUDu4nWBtTXPwvI/edit?gid=0#gid=0'
@@ -272,16 +271,15 @@ def check_password():
 
     st.title("🔐 Login erforderlich")
     with st.form("login"):
-        username = st.text_input("Benutzername")
         password = st.text_input("Passwort", type="password")
         submitted = st.form_submit_button("Einloggen")
 
         if submitted:
-            if username == HARDCODED_USERNAME and password == HARDCODED_PASSWORD:
+            if password == HARDCODED_PASSWORD:
                 st.session_state.authenticated = True
                 st.rerun() # Neu laden, um die Haupt-App zu starten
             else:
-                st.error("Falscher Benutzername oder Passwort.")
+                st.error("Falsches Passwort.")
         
         # Stoppt die Ausführung der Haupt-App, solange nicht authentifiziert
         if not st.session_state.get("authenticated", False):
