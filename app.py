@@ -100,7 +100,22 @@ def get_gspread_credentials():
         st.error("GSheet-Anmeldeinformationen (Secrets) nicht gefunden. Bitte `secrets.toml` einrichten.")
         st.stop()
         
-    
+    try:
+        test_creds = st.secrets["gcp_service_account"]
+        st.write("Debug Info:")
+        st.write(f"E-Mail Länge: {len(test_creds['client_email'])}")
+        st.write(f"E-Mail Start: '{test_creds['client_email'][:3]}'")
+        st.write(f"E-Mail Ende: '{test_creds['client_email'][-3:]}'")
+        
+        pk = test_creds['private_key']
+        st.write(f"Private Key enthält '\\n' (String): {'\\n' in pk}")
+        st.write(f"Private Key enthält Zeilenumbruch (Char): {'\n' in pk}")
+        
+        # Test der Ersetzung
+        pk_fixed = pk.replace('\\n', '\n')
+        st.write(f"Key Header korrekt? {pk_fixed.startswith('-----BEGIN PRIVATE KEY-----')}")
+    except Exception as e:
+        st.write(f"Debug Fehler: {e}")
     # Aufbau des Credentials-Objekts aus den Secrets. Diese Struktur muss mit secrets.toml übereinstimmen.
     try:
         secrets_data = st.secrets["gcp_service_account"]
