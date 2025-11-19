@@ -103,12 +103,18 @@ def get_gspread_credentials():
     # Aufbau des Credentials-Objekts aus den Secrets. Diese Struktur muss mit secrets.toml übereinstimmen.
     try:
         creds_info = {
-            "type": "service_account",
-            "project_id": st.secrets["gcp_service_account"]["project_id"],
-            # Der private Schlüssel muss \n anstelle von \\n verwenden
-            "private_key": st.secrets["gcp_service_account"]["private_key"].replace('\\n', '\n'),
-            "client_email": st.secrets["gcp_service_account"]["client_email"],
-            # ... weitere notwendige Felder ...
+            "type": secrets_data["type"],
+            "project_id": secrets_data["project_id"],
+            "private_key_id": secrets_data["private_key_id"],
+            # WICHTIG: Escaped Newlines (\n) in echte Zeilenumbrüche umwandeln
+            "private_key": secrets_data["private_key"].replace('\\n', '\n'),
+            "client_email": secrets_data["client_email"],
+            "client_id": secrets_data["client_id"],
+            "auth_uri": secrets_data["auth_uri"],
+            "token_uri": secrets_data["token_uri"], # Hier lag der Fehler: Dieses Feld fehlte vorher
+            "auth_provider_x509_cert_url": secrets_data["auth_provider_x509_cert_url"],
+            "client_x509_cert_url": secrets_data["client_x509_cert_url"],
+            "universe_domain": secrets_data.get("universe_domain", "googleapis.com"),
         }
         return Credentials.from_service_account_info(creds_info, scopes=GSPREAD_SCOPE)
     except KeyError as e:
