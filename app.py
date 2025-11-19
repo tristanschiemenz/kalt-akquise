@@ -99,9 +99,11 @@ def get_gspread_credentials():
     if not st.secrets:
         st.error("GSheet-Anmeldeinformationen (Secrets) nicht gefunden. Bitte `secrets.toml` einrichten.")
         st.stop()
+        
     
     # Aufbau des Credentials-Objekts aus den Secrets. Diese Struktur muss mit secrets.toml übereinstimmen.
     try:
+        secrets_data = st.secrets["gcp_service_account"]
         creds_info = {
             "type": secrets_data["type"],
             "project_id": secrets_data["project_id"],
